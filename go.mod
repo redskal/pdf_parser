@@ -1,5 +1,3 @@
-module github.com/flotzilla/pdf_parser
+module github.com/redskal/pdf_parser
 
-go 1.14
-
-require github.com/sirupsen/logrus v1.7.0
+go 1.20

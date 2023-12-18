@@ -4,25 +4,13 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/hex"
-	logger "github.com/sirupsen/logrus"
 	"io"
-	"io/ioutil"
+	"log"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 )
-
-var (
-	log          = logger.New()
-	isLogEnabled = false
-)
-
-// Set logrus logger to pdf parser instance
-func SetLogger(logrusLogger *logger.Logger) {
-	isLogEnabled = true
-	log = logrusLogger
-}
 
 // Parse pdf file metadata
 func ParsePdf(fileName string) (*PdfInfo, error) {
@@ -30,7 +18,7 @@ func ParsePdf(fileName string) (*PdfInfo, error) {
 
 	file, err := os.Open(fileName)
 	if err != nil {
-		logError(err)
+		log.Println(err)
 		return &pdfInfo, err
 	}
 
@@ -38,7 +26,7 @@ func ParsePdf(fileName string) (*PdfInfo, error) {
 
 	version, err := readPdfInfoVersion(file)
 	if err != nil {
-		logError(err)
+		log.Println(err)
 		return &pdfInfo, err
 	}
 
@@ -48,7 +36,7 @@ func ParsePdf(fileName string) (*PdfInfo, error) {
 
 	err = readXrefOffset(file, &pdfInfo)
 	if err != nil {
-		logError(err)
+		log.Println(err)
 		return &pdfInfo, err
 	}
 
@@ -57,7 +45,7 @@ func ParsePdf(fileName string) (*PdfInfo, error) {
 	// original xref
 	err, parsedXref, trailerSection := readXrefBlock(file, pdfInfo.OriginalXrefOffset, true)
 	if err != nil {
-		logError(err)
+		log.Println(err)
 		return &pdfInfo, err
 	}
 	pdfInfo.XrefTable = append(pdfInfo.XrefTable, parsedXref)
@@ -72,7 +60,7 @@ func ParsePdf(fileName string) (*PdfInfo, error) {
 	root := findRootObject(&pdfInfo, file)
 	if root == nil {
 		err = cannotFindRootObject
-		logError(err)
+		log.Println(err)
 		return &pdfInfo, nil
 	}
 	pdfInfo.Root = *root
@@ -80,13 +68,13 @@ func ParsePdf(fileName string) (*PdfInfo, error) {
 	info := searchInfoSection(&pdfInfo, file)
 	if info == nil {
 		err = cannotFindInfoObject
-		logError(err)
+		log.Println(err)
 		return &pdfInfo, nil
 	}
 	pdfInfo.Info = *info
 
 	meta, err := findMetadataObject(&pdfInfo, file)
-	logError(err)
+	log.Println(err)
 	if meta != nil {
 		pdfInfo.Metadata = *meta
 	}
@@ -128,7 +116,7 @@ func getDcdDecodeContent(b []byte) []byte {
 		bytes.Contains(b, []byte("/Subtype /Image")) {
 
 		parsedStream, err := parseBlockStream(b)
-		logError(err)
+		log.Println(err)
 		return parsedStream
 	}
 	return nil
@@ -137,12 +125,12 @@ func getDcdDecodeContent(b []byte) []byte {
 // absolute filepath should contains file name and extension, e.g. /home/get/some.jpg
 func writeStreamToFile(b *[]byte, path string) int {
 	f, err := os.Create(path)
-	logError(err)
+	log.Println(err)
 	defer f.Close()
 
 	bytesWritten, err := f.Write(*b)
 
-	logError(err)
+	log.Println(err)
 
 	return bytesWritten
 }
@@ -154,7 +142,7 @@ func decodeZippedData(data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	resp, err := ioutil.ReadAll(r)
+	resp, err := io.ReadAll(r)
 
 	err = r.Close()
 	if err != nil {
@@ -169,12 +157,12 @@ func findRootObject(pdfInfo *PdfInfo, file *os.File) *RootObject {
 		if el.Root.ObjectNumber != 0 {
 			obj, err := readXrefObjectContent(el.Root.ObjectNumber, pdfInfo, file)
 			if err != nil {
-				logError(err)
+				log.Println(err)
 			}
 
 			parsedObj, err := parseObjectContent(obj)
 			if err != nil {
-				logError(err)
+				log.Println(err)
 			}
 			return parseRootObject(parsedObj)
 		}
@@ -209,19 +197,19 @@ func parseRootObject(obj string) *RootObject {
 
 	if len(pagesData) > 0 && len(pagesData[0]) == 10 {
 		oi, err := parseObjectIdentifierFromString(obj[pagesData[0][3]:pagesData[0][9]])
-		logError(err)
+		log.Println(err)
 		root.Pages = oi
 	}
 
 	if len(metaData) > 0 && len(metaData[0]) == 10 {
 		oi, err := parseObjectIdentifierFromString(obj[metaData[0][3]:metaData[0][9]])
-		logError(err)
+		log.Println(err)
 		root.Metadata = oi
 	}
 
 	if len(pLabelData) > 0 && len(pLabelData[0]) == 10 {
 		oi, err := parseObjectIdentifierFromString(obj[pLabelData[0][3]:pLabelData[0][9]])
-		logError(err)
+		log.Println(err)
 		root.PageLabels = oi
 	}
 
@@ -233,12 +221,12 @@ func searchInfoSection(pdfInfo *PdfInfo, file *os.File) *InfoObject {
 		if el.Info.ObjectNumber != 0 {
 			obj, err := readXrefObjectContent(el.Info.ObjectNumber, pdfInfo, file)
 			if err != nil {
-				logError(err)
+				log.Println(err)
 			}
 
 			parsedObj, err := parseObjectContent(obj)
 			if err != nil {
-				logError(err)
+				log.Println(err)
 			}
 			return parseInfoObject(parsedObj)
 		}
@@ -270,7 +258,7 @@ func parseInfoObject(objectContent string) *InfoObject {
 func findMetadataObject(pdfInfo *PdfInfo, file *os.File) (*Metadata, error) {
 	if pdfInfo.Root.Metadata != nil && pdfInfo.Root.Metadata.ObjectNumber != 0 {
 		obj, err := readXrefObjectContent(pdfInfo.Root.Metadata.ObjectNumber, pdfInfo, file)
-		logError(err)
+		log.Println(err)
 		return parseMetadataContent(obj)
 	}
 
@@ -453,7 +441,7 @@ func parseObjectContent(block []byte) (string, error) {
 func readAllXrefSections(file *os.File, pdfInfo *PdfInfo, prevOffset int64) {
 	if prevOffset != 0 {
 		err, additionalXref, trailer := readXrefBlock(file, prevOffset, true)
-		logError(err)
+		log.Println(err)
 		pdfInfo.XrefTable = append(pdfInfo.XrefTable, additionalXref)
 		pdfInfo.AdditionalTrailerSection = append(pdfInfo.AdditionalTrailerSection, trailer)
 
@@ -761,22 +749,6 @@ func parseRegex(regexStr string, bytes []byte) [][]int {
 	return r.FindAllSubmatchIndex(bytes, -1)
 }
 
-func logError(args ...interface{}) {
-	if isLogEnabled {
-		for _, n := range args {
-			log.Error(n)
-		}
-	}
-}
-
-func logWarn(args ...interface{}) {
-	if isLogEnabled {
-		for _, n := range args {
-			log.Warn(n)
-		}
-	}
-}
-
 func binToHex(bytesRead int, buffer *[]byte) (*[]byte, int) {
 	dst := make([]byte, hex.EncodedLen(bytesRead))
 	n := hex.Encode(dst, (*buffer)[:bytesRead])
@@ -827,7 +799,7 @@ func getPdfVersion(content []byte) (string, error) {
 
 func getTrailerSection(file *os.File, pdfInfo *PdfInfo) {
 	stat, err := file.Stat()
-	logError(err)
+	log.Println(err)
 	trailer := getFileTrailer(file, stat.Size()-BufferSize300)
 	pdfInfo.OriginalTrailerSection = *trailer
 }
@@ -840,12 +812,12 @@ func getFileTrailer(file *os.File, sectionStart int64) *TrailerSection {
 			// continue
 		}
 	} else {
-		logError(err)
+		log.Println(err)
 	}
 	hexBytes, hexBytesWritten := binToHex(bytesRead, &buffer)
 	slice := (*hexBytes)[:hexBytesWritten]
 	trailer, err := parseTrailerBlock(&slice)
-	logError(err)
+	log.Println(err)
 	return &trailer
 }
 
@@ -863,35 +835,35 @@ func parseTrailerBlock(block *[]byte) (TrailerSection, error) {
 		)
 
 		size, err := parseTrailerSection(sizeRegex, &trailerBlock)
-		logError(err)
+		log.Println(err)
 		trailer.Size = strings.TrimSpace(size)
 
 		index, err := parseTrailerSection(idxRegex, &trailerBlock)
-		logError(err)
+		log.Println(err)
 		trailer.IdRaw = index
 
 		root, err := parseTrailerSection(rootRegex, &trailerBlock)
-		logError(err)
+		log.Println(err)
 		if root != "" {
 			oi, err := parseObjectIdentifierFromString(root)
-			logError(err)
+			log.Println(err)
 			trailer.Root = *oi
 		}
 
 		info, err := parseTrailerSection(infoRegex, &trailerBlock)
-		logError(err)
+		log.Println(err)
 		if info != "" {
 			inf, err := parseObjectIdentifierFromString(info)
-			logError(err)
+			log.Println(err)
 			trailer.Info = *inf
 		}
 
 		prev, err := parseTrailerSection(prevRegex, &trailerBlock)
-		logError(err)
+		log.Println(err)
 		if prev != "" {
 			prev = strings.TrimSpace(prev)
 			p, err := strconv.ParseInt(prev, 10, 64)
-			logError(err)
+			log.Println(err)
 			trailer.Prev = p
 		}
 		return trailer, nil
